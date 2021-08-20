@@ -13,5 +13,5 @@ vsout vs_main(float4 pos : POSITION, float2 uv : TEXCOORD)
 
 float4 ps_main(vsout input) : SV_TARGET
 {
-	return float4(nput.uv, 1, 1);
+	return float4(input.uv, 1, 1);
 }
