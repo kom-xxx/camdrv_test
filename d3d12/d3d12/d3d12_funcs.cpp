@@ -420,7 +420,7 @@ create_rootsignature(ID3D12Device *dev, render_pipeline *pipe)
 
 	D3D12_ROOT_PARAMETER param = {};
 	param.ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
-	param.DescriptorTable.pDescriptorRanges = &descTblRange;
+	param.DescriptorTable.pDescriptorRanges = &range;
 	param.DescriptorTable.NumDescriptorRanges = 1;
 	param.ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
 
@@ -432,7 +432,7 @@ create_rootsignature(ID3D12Device *dev, render_pipeline *pipe)
 		D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT;
 	desc.pParameters = &param;
 	desc.NumParameters = 1;
-	desc.pStaticSamplers = sd;
+	desc.pStaticSamplers = &sd;
 	desc.NumStaticSamplers = 1;
 
 	ComPtr<ID3DBlob> serial;
