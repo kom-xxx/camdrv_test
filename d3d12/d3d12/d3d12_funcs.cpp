@@ -5,10 +5,12 @@
 #include <Windows.h>
 #include <d3d12.h>
 #include <d3dcompiler.h>
-//#include <DirectXMath.h>
+#include <DirectXMath.h>
 #include <dxgi1_6.h>
 #include <wrl.h>
+
 using namespace Microsoft::WRL;
+using namespace DirectX;
 
 #include "cdefs.h"
 #include "d3d12_funcs.h"
@@ -29,7 +31,7 @@ using namespace Microsoft::WRL;
 #define DXGI_CREATE_FACTORY_FLAGS 0
 #endif
 
-#if 1
+#if 0
 struct XMFLOAT2
 {
     float x;
