@@ -50,13 +50,15 @@ WinMain(HINSTANCE inst, HINSTANCE _, LPSTR cmd_line, int show_mode)
 	enable_debug_layer();
 
 	create_device(&render.env, &render.dev);
-	create_upload_heap(render.dev.Get(), &render.vsin, MiB(1),
-			   &render.vsin.heap);
-        create_texture_heap(render.dev.Get(), 
+	create_upload_heap(render.dev.Get(), &render.upload, MiB(32));
+        create_texture_heap(render.dev.Get(), &render.texture, MiB(32));
 
-	create_command_list(render.dev.Get(), &render.cmd);
+        create_command_queue(render.dev.Get(), &render->queue);
 	create_swap_chain(&render.env, &render.cmd, WIN_WIDTH, WIN_HEIGHT,
 			  &render.out.schain);
+
+	create_command_list(render.dev.Get(), &render.cmd);
+
 	create_rtv(render.dev.Get(), &render.env, &render.out);
 	create_fence(render.dev.Get(), &render.out);
 

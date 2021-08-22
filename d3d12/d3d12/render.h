@@ -22,10 +22,12 @@ struct render_input {
     D3D12_VERTEX_BUFFER_VIEW vbv;
     ComPtr<ID3D12Resource> index;
     D3D12_INDEX_BUFFER_VIEW ibv;
-    size_t offset;
 };
 
-struct render_texture {
+struct render_tex_resource {
+    std::vector<ComPtr<ID3D12Resource>> texture_buffer(NR_THREADS);
+    ComPtr<ID3D12DescriptorHeap> desc_heap;
+    
 };
 
 struct render_command {
@@ -61,11 +63,14 @@ struct render_heap {
     size_t offset;
     size_t count;
 };
-    
+
 struct render {
     ComPtr<ID3D12Device> dev;
     render_heap upload;
     render_heap texture;
+#ifdef WITH_READBACK_HEAP
+    render_heap readback;
+#endif
     render_environment env;
     render_input vsin;
     render_pipeline pipe;

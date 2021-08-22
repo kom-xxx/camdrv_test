@@ -1,4 +1,4 @@
-#include <stddef.h>
+o#include <stddef.h>
 #include <stdint.h>
 #include <string.h>
 
@@ -134,9 +134,9 @@ transition_barrier_state(D3D12_RESOURCE_BARRIER *barrier,
 void
 execute_command_list(render_cmd_queue *queue, render_command *cmd)
 {
-    ID3D12CommandList *list[] = {cmd};
-    queue->ExecuteCommandLists(1, list);
-    queeu->Signal(queue->fence, ++queue->fvalue);
+    ID3D12CommandList *list[] = {cmd->list.Get()};
+    queue->queue->ExecuteCommandLists(1, list);
+    queue->queeu->Signal(queue->fence, ++queue->fvalue);
 
     if (queue->fence->GetCompletedValue() != queue->fvalue) {
         HANDLE ev = CreateEvent(nullptr, false, false, nullptr);
@@ -233,8 +233,7 @@ create_command_list(ID3D12Device *dev, render_command *cmd,
  *** HEAPS AND BUFFERS
  ***/
 void
-create_upload_heap(ID3D12Device *dev, render_input *in,
-		   size_t size, ID3D12Heap **heap)
+create_upload_heap(ID3D12Device *dev, render_hap *heap, size_t size)
 {
     HRESULT hr;
 
@@ -250,18 +249,18 @@ create_upload_heap(ID3D12Device *dev, render_input *in,
         0,		/* alignment */
         D3D12_HEAP_FLAG_ALLOW_ONLY_BUFFERS
     };
-    hr = dev->CreateHeap(&desc, IID_PPV_ARGS(heap));
+    hr = dev->CreateHeap(&desc, IID_PPV_ARGS(&upload->heap));
     RCK(hr, "CreateHeap(upload):%x");
-    in->offset = 0;
+    upload->offset = 0;
 }
 
 void
-create_upload_buffer(ID3D12Device *dev, render_input *in,
+create_upload_buffer(ID3D12Device *dev, render_heap *heap,
 		     size_t size, ID3D12Resource **res)
 {
     HRESULT hr;
 
-    D3D12_RESOURCE_DESC res_desc = {
+    D3D12_RESOURCE_DESC desc = {
         D3D12_RESOURCE_DIMENSION_BUFFER,
         0,		/* alignment */
         size,		/* width */
@@ -273,19 +272,19 @@ create_upload_buffer(ID3D12Device *dev, render_input *in,
         D3D12_TEXTURE_LAYOUT_ROW_MAJOR,
         D3D12_RESOURCE_FLAG_NONE
     };
-    hr = dev->CreatePlacedResource(in->heap.Get(), in->offset, &res_desc,
+    hr = dev->CreatePlacedResource(heap->heap.Get(), heap->offset, &desc,
                                    D3D12_RESOURCE_STATE_GENERIC_READ,
                                    nullptr, IID_PPV_ARGS(res));
-    RCK(hr, "CreatePlacedResource(upload):%x");
+    RCK(hr, "CreatePlacedResource(heap):%x");
 
     D3D12_RESOURCE_ALLOCATION_INFO
-        alloc_info = dev->GetResourceAllocationInfo(0, 1, &res_desc);
-    in->offset += alloc_info.SizeInBytes;
+        alloc_info = dev->GetResourceAllocationInfo(0, 1, &desc);
+    heap->offset += alloc_info.SizeInBytes;
+    heap->count += 1;
 }
 
 void
-create_texture_heap(ID3D12Device *dev, size_t &offset, size_t size,
-                    ID3D12Heap **heap)
+create_texture_heap(ID3D12Device *dev, render_heap *texture, size_t size)
 {
     HRESULT hr;
 
@@ -301,13 +300,13 @@ create_texture_heap(ID3D12Device *dev, size_t &offset, size_t size,
         0,		/* alignment */
         D3D12_HEAP_FLAG_ALLOW_ONLY_NON_RT_DS_TEXTURES
     };
-    dev->CreateHeap(&desc, IID_PPV_ARGS(heap));
+    hr = dev->CreateHeap(&desc, IID_PPV_ARGS(texture->heap));
     RCK(hr, "CreateHeap(texture):%x");
-    offset = 0;
+    texture->offset = 0;
 }
 
 void
-create_texture_buffer(ID3D12Device *dev, ID3D12Heap *heap, size_t *offset,
+create_texture_buffer(ID3D12Device *dev, render_heap *heap,
                       size_t width, size_t height, ID3D12Resource **res)
 {
     D3D12_RESOURCE_DESC desc = {
@@ -322,12 +321,13 @@ create_texture_buffer(ID3D12Device *dev, ID3D12Heap *heap, size_t *offset,
         D3D12_TEXTURE_LAYOUT_UNKNOWN,
         D3D12_RESOURCE_FLAG_NONE
     };
-    dev->CreatePlacedResource(heap, *offset, &desc,
+    dev->CreatePlacedResource(heap->heap.Get(), heap->offset, &desc,
                               D3D12_RESOURCE_STATE_COPY_DEST, nullptr,
                               IID_PPV_ARGS(res));
     D3D12_RESOURCE_ALLOCATION_INFO
         alloc_info = dev->GetResourceAllocationInfo(0, 1, &desc);
-    in->offset += alloc_info.SizeInBytes;
+    heap->offset += alloc_info.SizeInBytes;
+    heap->count += 1;
 }
 
 void
@@ -420,9 +420,40 @@ create_ibv(ID3D12Device *dev, render_input *in)
 }
 
 void
-create_srv(ID3D12Device *dev, render *render)
+create_srv(ID3D12Device *dev, render_tex_resource *tex)
 {
-    
+    HRESULT hr;
+
+    D3D12_DESCRIPTOR_HEAP_DESC heap_desc = {
+        D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV,
+        NR_TEXTURE,             /* # of descriptor */
+        D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE,
+        0                       /* node mask */
+    };
+    hr = dev->CreateDescriptorHeap(&desc, IID_PPV_ARGS(&tex->desc_heap));
+    RCK(hr, "CreateDescriptorHeap(CBV_SRV_UAV):%x");
+
+    D3D12_SHADER_RESOURCE_VIEW_DESC srv_desc = {
+        DXGI_FORMAT_R8G8B8A8_UNORM,
+        D3D12_SRV_DIMENSION_TEXTURE2D,
+        D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING,
+        {
+            0,                  /* most detailed mip */
+            1,                  /* mip level */
+            0,                  /* plane slice */
+            0.0F                /* resource min LOD calmp */
+        }
+    };
+    D3D12_CPU_DESCRIPTOR_HANDLE
+        handle = heap_desc->GetCPUDescriptorHandleForHeapStart();
+    uint32_t incr = (dev->GetDescriptorHandleIncrementSize(
+                         D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV));
+    for (size_t i = 0; i < NR_TEXTURE; ++i) {
+        hr = dev->CreateShaderResourceView(tex->texture_buffer[i], &srv_desc,
+                                           handle);
+        RCK(hr, "CreateShaderResourceView:%x");
+        handle.ptr += incr;
+    }
 }
 
 void
@@ -711,9 +742,9 @@ render_core(render *render, uint32_t frame)
     render->queue.queue->Signal(render->out.fence.Get(),
                               ++render->out.fvalue);
 
-    if (render->out.fence->GetCompletedValue() != render->out.fvalue) {
+    if (render->queue.fence->GetCompletedValue() != render->queue.fvalue) {
         HANDLE ev = CreateEvent(nullptr, false, false, nullptr);
-        render->out.fence->SetEventOnCompletion(render->out.fvalue, ev);
+        render->queue.fence->SetEventOnCompletion(render->queue.fvalue, ev);
         WaitForSingleObject(ev, INFINITE);
         CloseHandle(ev);
     }
@@ -724,4 +755,7 @@ render_core(render *render, uint32_t frame)
 #endif
 
     render->out.schain->Present(1, 0);
+
+
+
 }
