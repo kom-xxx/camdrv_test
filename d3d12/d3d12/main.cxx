@@ -50,16 +50,18 @@ WinMain(HINSTANCE inst, HINSTANCE _, LPSTR cmd_line, int show_mode)
 	enable_debug_layer();
 
 	create_device(&render.env, &render.dev);
+	create_upload_heap(render.dev.Get(), &render.vsin, MiB(1),
+			   &render.vsin.heap);
+        create_texture_heap(render.dev.Get(), 
+
 	create_command_list(render.dev.Get(), &render.cmd);
-	create_swap_chain(&render.env, &render.cmd, WIN_WIDTH, WIN_WIDTH,
+	create_swap_chain(&render.env, &render.cmd, WIN_WIDTH, WIN_HEIGHT,
 			  &render.out.schain);
 	create_rtv(render.dev.Get(), &render.env, &render.out);
 	create_fence(render.dev.Get(), &render.out);
 
 	ShowWindow(render.env.window, SW_SHOW);
 
-	create_upload_heap(render.dev.Get(), &render.vsin, MiB(1),
-			   &render.vsin.heap);
 	create_vertex_buffer_view(render.dev.Get(), &render.vsin);
 	create_index_buffer_view(render.dev.Get(), &render.vsin);
 
