@@ -134,7 +134,7 @@ transition_barrier_state(D3D12_RESOURCE_BARRIER *barrier,
 void
 execute_command_list(render_cmd_queue *queue, render_command *cmd)
 {
-    ID3D12CommandList *list = {cmd};
+    ID3D12CommandList *list[] = {cmd};
     queue->ExecuteCommandLists(1, list);
     queeu->Signal(queue->fence, ++queue->fvalue);
 
@@ -166,19 +166,19 @@ create_command_queue(ID3D12Device *dev, render_cmd_queue *queue,
         flags,                  /* flags */
         0                       /* nodemask */
     };
-    hr = dev->CreateCommandQueue(&qdesc, IID_PPV_ARGS(&cmd->queue));
+    hr = dev->CreateCommandQueue(&qdesc, IID_PPV_ARGS(&queue->queue));
     RCK(hr, "CreateCommandQueue:%x");
 }
 
 void
-create_fence(ID3D12Device *dev, render_output *out)
+create_fence(ID3D12Device *dev, render_cmd_queue *queue)
 {
     HRESULT hr;
 
-    out->fvalue = 0;
+    queue->fvalue = 0;
 
-    hr = dev->CreateFence(out->fvalue, D3D12_FENCE_FLAG_NONE,
-                          IID_PPV_ARGS(&out->fence));
+    hr = dev->CreateFence(queue->fvalue, D3D12_FENCE_FLAG_NONE,
+                          IID_PPV_ARGS(&queue->fence));
     RCK(hr, "CreateFence:%x");
 }
 
@@ -186,7 +186,7 @@ create_fence(ID3D12Device *dev, render_output *out)
  *** SWAP-CHAIN
  ***/
 void
-create_swap_chain(render_environment *env, render_command *cmd,
+create_swap_chain(render_environment *env, render_cmd_queue *queue,
 		  size_t width, size_t height, IDXGISwapChain1 **swap_chain)
 {
     HRESULT hr;
@@ -204,7 +204,7 @@ create_swap_chain(render_environment *env, render_command *cmd,
         DXGI_ALPHA_MODE_UNSPECIFIED,	       /* alpha mode */
         DXGI_SWAP_CHAIN_FLAG_ALLOW_MODE_SWITCH /* flags */
     };
-    hr = env->factory->CreateSwapChainForHwnd(cmd->queue.Get(), env->window,
+    hr = env->factory->CreateSwapChainForHwnd(queue->queue.Get(), env->window,
                                               &sc_desc, nullptr, nullptr,
                                               swap_chain);
     RCK(hr, "CreateSwapChainForHwnd:%x");
@@ -287,6 +287,8 @@ void
 create_texture_heap(ID3D12Device *dev, size_t &offset, size_t size,
                     ID3D12Heap **heap)
 {
+    HRESULT hr;
+
     D3D12_HEAP_DESC desc = {
         size,
         {
@@ -320,10 +322,11 @@ create_texture_buffer(ID3D12Device *dev, ID3D12Heap *heap, size_t *offset,
         D3D12_TEXTURE_LAYOUT_UNKNOWN,
         D3D12_RESOURCE_FLAG_NONE
     };
-    dev->CreatePlacedResource(heap, *offset, D3D12_RESOURCE_STATE_COPY_DEST,
-                              nullptr, IID_PPV_ARGS(res));
+    dev->CreatePlacedResource(heap, *offset, &desc,
+                              D3D12_RESOURCE_STATE_COPY_DEST, nullptr,
+                              IID_PPV_ARGS(res));
     D3D12_RESOURCE_ALLOCATION_INFO
-        alloc_info = dev->GetResourceAllocationInfo(0, 1, &res_desc);
+        alloc_info = dev->GetResourceAllocationInfo(0, 1, &desc);
     in->offset += alloc_info.SizeInBytes;
 }
 
@@ -704,8 +707,8 @@ render_core(render *render, uint32_t frame)
     render->cmd.list->Close();
 
     ID3D12CommandList *cmd_lists[] = {render->cmd.list.Get()};
-    render->cmd.queue->ExecuteCommandLists(1, cmd_lists);
-    render->cmd.queue->Signal(render->out.fence.Get(),
+    render->queue.queue->ExecuteCommandLists(1, cmd_lists);
+    render->queue.queue->Signal(render->out.fence.Get(),
                               ++render->out.fvalue);
 
     if (render->out.fence->GetCompletedValue() != render->out.fvalue) {

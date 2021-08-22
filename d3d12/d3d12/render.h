@@ -31,12 +31,12 @@ struct render_texture {
 struct render_command {
     ComPtr<ID3D12CommandAllocator> alloc;
     ComPtr<ID3D12GraphicsCommandList> list;
-    ComPtr<ID3D12Fence> fence;
-    uint64_t fvalue;
 };
 
 struct render_cmd_queue {
     ComPtr<ID3D12CommandQueue> queue;
+    ComPtr<ID3D12Fence> fence;
+    uint64_t fvalue;
 };
 
 struct render_output {

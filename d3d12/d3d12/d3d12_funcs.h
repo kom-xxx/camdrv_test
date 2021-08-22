@@ -11,7 +11,7 @@ void create_swap_chain(render_environment *, render_command *, size_t, size_t,
 void create_rtv(ID3D12Device *, render_environment *, render_output *);
 void create_fence(ID3D12Device *, render_output *);
 
-D3D12_RESOURCE_BARRIER *
+D3D12_RESOURCE_BARRIER
 transition_barrier(ID3D12Resource *res,
 		   D3D12_RESOURCE_STATES before
 		   	= D3D12_RESOURCE_STATE_COMMON,
