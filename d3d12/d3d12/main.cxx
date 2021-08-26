@@ -54,21 +54,22 @@ WinMain(HINSTANCE inst, HINSTANCE _, LPSTR cmd_line, int show_mode)
 	create_swap_chain(&render.env, &render.queue, WIN_WIDTH, WIN_HEIGHT,
 			  &render.out.schain);
 
-	create_upload_heap(render.dev.Get(), &render.upload, MiB(32));
-        create_texture_heap(render.dev.Get(), &render.texture, MiB(32));
-#if 1
-        ComPtr<ID3D12Resource> tex;
-        create_texture_buffer(render.dev.Get(), &render.upload,
-                              WIN_WIDTH, WIN_HEIGHT, &tex);
-#endif
+	create_upload_heap(render.dev.Get(), &render.ul_heap, MiB(32));
+        create_texture_heap(render.dev.Get(), &render.tex_heap, MiB(32));
+        create_readback_heap(render.dev.Get(), &render.dl_heap, MiB(32));
+
 	create_command_list(render.dev.Get(), &render.cmd);
 
 	create_fence(render.dev.Get(), &render.queue);
 
-	create_vbv(render.dev.Get(), &render.upload, &render.in);
-	create_ibv(render.dev.Get(), &render.upload, &render.in);
+	create_vbv(render.dev.Get(), &render.ul_heap, &render.in);
+	create_ibv(render.dev.Get(), &render.ul_heap, &render.in);
 	create_rtv(render.dev.Get(), &render.env, &render.out);
-	ShowWindow(render.env.window, SW_SHOW);
+
+        setup_texture(render.dev.Get(), &render.ul_heap, &render.tex_heap,
+                      &render.cmd, &render.queue, &render.tex,
+                      WIN_WIDTH, WIN_HEIGHT);
+        create_srv(render.dev.Get(), &render.tex);
 
 	compile_hlsl(L"shaders.hlsl", "vs_main", "vs_5_0",
 		     &render.pipe.vs_code);
@@ -80,6 +81,8 @@ WinMain(HINSTANCE inst, HINSTANCE _, LPSTR cmd_line, int show_mode)
 
 	setup_viewport(&render.pipe.view, WIN_WIDTH, WIN_HEIGHT);
 	setup_scissor(&render.pipe.scissor, WIN_WIDTH, WIN_HEIGHT);
+
+	ShowWindow(render.env.window, SW_SHOW);
 
 	main_loop();
 

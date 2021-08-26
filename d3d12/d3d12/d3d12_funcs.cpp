@@ -223,10 +223,11 @@ create_command_list(ID3D12Device *dev, render_command *cmd,
     hr = dev->CreateCommandList(0, type, cmd->alloc.Get(), nullptr,
                                 IID_PPV_ARGS(&cmd->list));
     RCK(hr, "CreateCommandList:%x");
+    cmd->list->Close();
 }
 
 /***
- *** HEAPS AND BUFFERS
+ *** UPLOAD
  ***/
 void
 create_upload_heap(ID3D12Device *dev, render_heap *heap, size_t size)
@@ -291,6 +292,9 @@ copy_to_upload_buffer(ID3D12Resource *dst, void *src, size_t size)
     dst->Unmap(0, nullptr);
 }
 
+/***
+ *** TEXTURE
+ ***/
 void
 create_texture_heap(ID3D12Device *dev, render_heap *heap, size_t size)
 {
@@ -319,7 +323,6 @@ create_texture_buffer(ID3D12Device *dev, render_heap *heap,
 {
     HRESULT hr;
 
-    D3D12_HEAP_DESC hdesc = heap->heap->GetDesc();
     D3D12_RESOURCE_DESC desc = {
         D3D12_RESOURCE_DIMENSION_TEXTURE2D,
         0,
@@ -333,7 +336,7 @@ create_texture_buffer(ID3D12Device *dev, render_heap *heap,
         D3D12_RESOURCE_FLAG_NONE
     };
     hr = dev->CreatePlacedResource(heap->heap.Get(), heap->offset, &desc,
-                                   D3D12_RESOURCE_STATE_COMMON, nullptr,
+                                   D3D12_RESOURCE_STATE_COPY_DEST, nullptr,
                                    IID_PPV_ARGS(res));
     RCK(hr, "CreatePlacedResource:%x");
 
@@ -347,6 +350,7 @@ void
 upload_texture(ID3D12Device *dev, render_command *cmd, render_cmd_queue *queue,
                ID3D12Resource *dst, ID3D12Resource *src)
 {
+#ifdef USE_COPY_TEXTURE_REGION    
     D3D12_TEXTURE_COPY_LOCATION dst_loc = {
         src,                    /* resource */
         D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX,
@@ -375,10 +379,92 @@ upload_texture(ID3D12Device *dev, render_command *cmd, render_cmd_queue *queue,
         transition_barrier(dst, D3D12_RESOURCE_STATE_COPY_DEST,
                            D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
     cmd->list->ResourceBarrier(1, &barrier);
+#else
+    cmd->alloc->Reset();
+    cmd->list->Reset(cmd->alloc.Get(), nullptr);
 
+    cmd->list->CopyResource(dst, src);
+#endif
     cmd->list->Close();
 
     execute_command_list(queue, cmd);
+}
+
+void
+setup_texture(ID3D12Device *dev, render_heap *upload, render_heap *texture,
+              render_command *cmd, render_cmd_queue *queue,
+              render_texture *tex, size_t width, size_t height)
+{
+    size_t size = width * height * sizeof (uint32_t);
+    
+    for (size_t i = 0; i < NR_TEXTURE; ++i) {
+        std::vector<uint32_t>
+            image = create_texture_image(width, height, i == 1);
+        tex->image.push_back(image);
+        create_upload_buffer(dev, upload, size, &tex->upload_buffer[i]);
+        copy_to_upload_buffer(tex->upload_buffer[i].Get(),
+                              (void *)tex->image[i].data(), size);
+
+        create_texture_buffer(dev, texture, width, height,
+                              &tex->texture_buffer[i]);
+#ifndef COPY_ON_RENDER_CORE
+        upload_texture(dev, cmd, queue, tex->texture_buffer[i].Get(),
+                       tex->upload_buffer[i].Get());
+#endif
+    }
+}
+
+/***
+ *** READBACK BUFFER
+ ***/
+void
+create_readback_heap(ID3D12Device *dev, render_heap *heap, size_t size)
+{
+    HRESULT hr;
+
+    D3D12_HEAP_DESC desc = {
+        size,
+        {
+            D3D12_HEAP_TYPE_READBACK,
+            D3D12_CPU_PAGE_PROPERTY_UNKNOWN,
+            D3D12_MEMORY_POOL_UNKNOWN,
+            1,
+            1
+        },
+        KiB(64),
+        D3D12_HEAP_FLAG_ALLOW_ONLY_BUFFERS
+    };
+    hr = dev->CreateHeap(&desc, IID_PPV_ARGS(&heap->heap));
+    RCK(hr, "CreateHeap(readback):%x");
+    heap->offset = 0;
+}
+
+void
+create_readback_buffer(ID3D12Device *dev, render_heap *heap, size_t size,
+                       ID3D12Resource **res)
+{
+    HRESULT hr;
+
+    D3D12_RESOURCE_DESC desc = {
+        D3D12_RESOURCE_DIMENSION_BUFFER,
+        0,
+        size,
+        1,
+        1,
+        1,
+        DXGI_FORMAT_UNKNOWN,
+        {1, 0},
+        D3D12_TEXTURE_LAYOUT_ROW_MAJOR,
+        D3D12_RESOURCE_FLAG_NONE
+    };
+    hr = dev->CreatePlacedResource(heap->heap.Get(), heap->offset, &desc,
+                                   D3D12_RESOURCE_STATE_COPY_DEST, nullptr,
+                                   IID_PPV_ARGS(res));
+    RCK(hr, "CreatePlacedResource:%x");
+    D3D12_RESOURCE_ALLOCATION_INFO
+        alloc_info = dev->GetResourceAllocationInfo(0, 1, &desc);
+    heap->offset += alloc_info.SizeInBytes;
+    heap->count += 1;
 }
 
 /***
@@ -401,12 +487,6 @@ create_vbv(ID3D12Device *dev, render_heap *heap, render_input *in)
     create_upload_buffer(dev, heap, sizeof vertexes, &in->vertex);
 
     copy_to_upload_buffer(in->vertex.Get(), vertexes,  sizeof vertexes);
-#if 0
-    void *map;
-    hr = in->vertex->Map(0, nullptr, &map);
-    memcpy(map, vertexes, sizeof vertexes);
-    in->vertex->Unmap(0, nullptr);
-#endif
 
     /* set vertex bufffer view */
     in->vbv.BufferLocation = in->vertex->GetGPUVirtualAddress();
@@ -424,12 +504,6 @@ create_ibv(ID3D12Device *dev, render_heap *heap, render_input *in)
     create_upload_buffer(dev, heap, sizeof indexes, &in->index);
 
     copy_to_upload_buffer(in->index.Get(), indexes, sizeof indexes);
-#if 0
-    void *map;
-    in->index->Map(0, nullptr, &map);
-    memcpy(map, indexes, sizeof indexes);
-    in->index->Unmap(0, nullptr);
-#endif
 
     in->ibv.BufferLocation = in->index->GetGPUVirtualAddress();
     in->ibv.SizeInBytes = sizeof indexes;
@@ -437,31 +511,7 @@ create_ibv(ID3D12Device *dev, render_heap *heap, render_input *in)
 }
 
 void
-setup_texture(ID3D12Device *dev, render_heap *upload, render_heap *texture,
-              render_command *cmd, render_cmd_queue *queue,
-              render_tex_resource *tex, size_t width, size_t height)
-{
-    size_t size = width * height * sizeof (uint32_t);
-    
-    for (size_t i = 0; i < NR_TEXTURE; ++i) {
-        std::vector<uint32_t>
-            image = create_texture_image(width, height, i == 1);
-        tex->image.push_back(image);
-        create_upload_buffer(dev, upload, size, &tex->upload_buffer[i]);
-        copy_to_upload_buffer(tex->upload_buffer[i].Get(),
-                              (void *)tex->image[i].data(), size);
-
-        create_texture_buffer(dev, texture, width, height,
-                              &tex->texture_buffer[i]);
-#ifndef COPY_ON_RENDER_CORE
-        upload_texture(dev, cmd, queue, tex->texture_buffer[i].Get(),
-                       tex->upload_buffer[i].Get());
-#endif
-    }
-}
-              
-void
-create_srv(ID3D12Device *dev, render_tex_resource *tex)
+create_srv(ID3D12Device *dev, render_texture *tex)
 {
     HRESULT hr;
 

@@ -24,8 +24,9 @@ struct render_input {
     D3D12_INDEX_BUFFER_VIEW ibv;
 };
 
-struct render_tex_resource {
-    std::vector<std::vector<uint32_t>> image;
+struct render_texture {
+    std::vector<std::vector<uint32_t>> image; /* VirtualAlloc()'ed mem or
+                                                 texture image in vector */
     std::vector<ComPtr<ID3D12Resource>> upload_buffer{nullptr, nullptr};
     std::vector<ComPtr<ID3D12Resource>> texture_buffer{nullptr, nullptr};
     ComPtr<ID3D12DescriptorHeap> desc_heap;
@@ -47,6 +48,7 @@ struct render_output {
     ComPtr<IDXGISwapChain1> schain;
     ComPtr<ID3D12DescriptorHeap> rtvheap;
     std::vector<ComPtr<ID3D12Resource>> back_buff{nullptr, nullptr};
+    std::vector<ComPtr<ID3D12Resource>> readback_buffer{nullptr, nullptr};
 };
 
 struct render_pipeline {
@@ -70,14 +72,13 @@ struct render {
     ComPtr<ID3D12Device> dev;
     render_heap ul_heap;
     render_heap tex_heap;
-#ifdef WITH_READBACK_HEAP
-    render_heap readback;
-#endif
+    render_heap dl_heap;
     render_environment env;
     render_input in;
-    render_pipeline pipe;
+    render_texture tex;
     render_command cmd;
     render_cmd_queue queue;
+    render_pipeline pipe;
     render_output out;
 };
 
