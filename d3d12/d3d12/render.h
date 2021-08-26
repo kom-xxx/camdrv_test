@@ -25,7 +25,9 @@ struct render_input {
 };
 
 struct render_tex_resource {
-    std::vector<ComPtr<ID3D12Resource>> texture_buffer(NR_THREADS);
+    std::vector<std::vector<uint32_t>> image;
+    std::vector<ComPtr<ID3D12Resource>> upload_buffer{nullptr, nullptr};
+    std::vector<ComPtr<ID3D12Resource>> texture_buffer{nullptr, nullptr};
     ComPtr<ID3D12DescriptorHeap> desc_heap;
     
 };
@@ -66,13 +68,13 @@ struct render_heap {
 
 struct render {
     ComPtr<ID3D12Device> dev;
-    render_heap upload;
-    render_heap texture;
+    render_heap ul_heap;
+    render_heap tex_heap;
 #ifdef WITH_READBACK_HEAP
     render_heap readback;
 #endif
     render_environment env;
-    render_input vsin;
+    render_input in;
     render_pipeline pipe;
     render_command cmd;
     render_cmd_queue queue;

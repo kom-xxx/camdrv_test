@@ -1,7 +1,9 @@
 #include <stdint.h>
 #include <vector>
 
-vector
+#include "utilities.h"
+
+std::vector<uint32_t>
 create_texture_image(size_t width, size_t height, bool direction)
 {
     std::vector<uint32_t> image;
@@ -25,7 +27,7 @@ create_texture_image(size_t width, size_t height, bool direction)
                     pixel = 0xff00ff00;
                 else
                     pixel = 0xffff0000;
-            image.pushback(pixel);
+            image.push_back(pixel);
         }
 
     return image;

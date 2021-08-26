@@ -142,6 +142,7 @@
   <ItemGroup>
     <ClCompile Include="d3d12_funcs.cpp" />
     <ClCompile Include="main.cxx" />
+    <ClCompile Include="utilities.cxx" />
     <ClCompile Include="win_appl.cxx" />
   </ItemGroup>
   <ItemGroup>
