@@ -350,9 +350,17 @@ void
 upload_texture(ID3D12Device *dev, render_command *cmd, render_cmd_queue *queue,
                ID3D12Resource *dst, ID3D12Resource *src)
 {
-#ifdef USE_COPY_TEXTURE_REGION    
+    HRESULT hr;
+
+    D3D12_RESOURCE_DESC ddesc = dst->GetDesc();
+    D3D12_RESOURCE_DESC sdesc = src->GetDesc();
+    D3D12_HEAP_PROPERTIES dprops, sprops;
+    D3D12_HEAP_FLAGS dflags, sflags;
+    hr = dst->GetHeapProperties(&dprops, &dflags);
+    hr = src->GetHeapProperties(&sprops, &sflags);
+    
     D3D12_TEXTURE_COPY_LOCATION dst_loc = {
-        src,                    /* resource */
+        dst,                    /* resource */
         D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX,
         0
     };
@@ -365,7 +373,7 @@ upload_texture(ID3D12Device *dev, render_command *cmd, render_cmd_queue *queue,
     dev->GetCopyableFootprints(&desc, 0, 1, 0, &fp, &nr_line, &line_len, &size);
 
     D3D12_TEXTURE_COPY_LOCATION src_loc = {
-        dst,
+        src,
         D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT,
         fp
     };
@@ -379,12 +387,6 @@ upload_texture(ID3D12Device *dev, render_command *cmd, render_cmd_queue *queue,
         transition_barrier(dst, D3D12_RESOURCE_STATE_COPY_DEST,
                            D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
     cmd->list->ResourceBarrier(1, &barrier);
-#else
-    cmd->alloc->Reset();
-    cmd->list->Reset(cmd->alloc.Get(), nullptr);
-
-    cmd->list->CopyResource(dst, src);
-#endif
     cmd->list->Close();
 
     execute_command_list(queue, cmd);
