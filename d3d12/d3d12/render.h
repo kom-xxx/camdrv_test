@@ -51,6 +51,7 @@ struct render_output {
     std::vector<ComPtr<ID3D12Resource>> back_buff{nullptr, nullptr};
 	std::vector<ComPtr<ID3D12Resource>> target{nullptr, nullptr};
     std::vector<ComPtr<ID3D12Resource>> readback{nullptr, nullptr};
+    uint32_t frame_index;
 };
 
 struct render_pipeline {

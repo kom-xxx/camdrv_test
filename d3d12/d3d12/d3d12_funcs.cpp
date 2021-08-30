@@ -25,9 +25,6 @@ using namespace DirectX;
 #pragma comment(lib, "dxgi.lib")
 #pragma comment(lib, "d3dcompiler.lib")
 
-#define COPY_ON_RENDER_CORE
-#define WITH_VIRTUAL_ALLOC
-
 #define PCI_VENDOR_NVIDIA 0x10de
 
 #define REQUIRED_D3D12_FEATURE D3D_FEATURE_LEVEL_12_1
@@ -391,9 +388,9 @@ void
 upload_texture(ID3D12Device *dev, render_command *cmd, render_cmd_queue *queue,
                ID3D12Resource *dst, ID3D12Resource *src)
 {
+#if 0
     HRESULT hr;
 
-#if 0
     D3D12_RESOURCE_DESC ddesc = dst->GetDesc();
     D3D12_RESOURCE_DESC sdesc = src->GetDesc();
     D3D12_HEAP_PROPERTIES dprops, sprops;
@@ -446,7 +443,9 @@ setup_texture(ID3D12Device *dev, render_heap *upload, render_heap *texture,
               render_command *cmd, render_cmd_queue *queue,
               render_texture *tex, size_t width, size_t height)
 {
+#if defined(_DEBUG) && !defined(WITH_VIRTUAL_ALLOC)
     uint32_t *data[2];
+#endif
     size_t size = width * height * sizeof (uint32_t);
     
     for (size_t i = 0; i < NR_TEXTURE; ++i) {
@@ -454,14 +453,16 @@ setup_texture(ID3D12Device *dev, render_heap *upload, render_heap *texture,
         tex->alloc_mem[i] = alloc_texture_image(width, height, i % 2);
         import_uploade_buffer(dev, tex->alloc_mem[i], width, height,
                               &tex->upload_buffer[i]);
-#else
+#else  /* !WITH_VIRTUAL_ALLOC */
         create_upload_buffer(dev, upload, size, &tex->upload_buffer[i]);
         tex->image.push_back(create_texture_image(width, height, i == 1));
+# ifdef _DEBUG
         data[i] = tex->image[i].data();
         fprintf(stderr, "%s: image%lld:%p\n", __func__, i, data[i]);
+# endif
         copy_to_upload_buffer(tex->upload_buffer[i].Get(),
                               (void *)tex->image[i].data(), size);
-#endif
+#endif  /* WITH_VIRTUAL_ALLOC */
         create_texture_buffer(dev, texture, width, height,
                               &tex->texture_buffer[i]);
 #ifndef COPY_ON_RENDER_CORE
@@ -523,6 +524,14 @@ create_target_buffer(ID3D12Device *dev, render_heap *heap,
         alloc_info = dev->GetResourceAllocationInfo(0, 1, &desc);
     heap->offset += alloc_info.SizeInBytes;
     heap->count += 1;
+}
+
+void
+acquire_target_buffers(ID3D12Device *dev, render_heap *heap, render_output *out,
+                       size_t width, size_t height)
+{
+    for (size_t i = 0; i < NR_BUFFERS; ++i)
+        create_target_buffer(dev, heap, width, height, &out->back_buff[i]);
 }
 
 /***
@@ -729,7 +738,7 @@ create_srv(ID3D12Device *dev, render_texture *tex)
 }
 
 void
-create_rtv(ID3D12Device *dev, render_environment *env, render_output *out)
+create_rtv(ID3D12Device *dev, render_output *out)
 {
     HRESULT hr;
 
@@ -743,19 +752,21 @@ create_rtv(ID3D12Device *dev, render_environment *env, render_output *out)
                                    IID_PPV_ARGS(&out->rtvheap));
     RCK(hr, "CreateDescriptorHeap:%x");
 
+#ifndef WITHOUT_SWAP_CHAIN
     DXGI_SWAP_CHAIN_DESC sw_desc;
     hr = out->schain->GetDesc(&sw_desc);
     RCK(hr, "IDXGISwapChain1::GetDesc:%x");
+#endif
 
     D3D12_CPU_DESCRIPTOR_HANDLE handle =
         out->rtvheap->GetCPUDescriptorHandleForHeapStart();
-    const D3D12_DESCRIPTOR_HEAP_TYPE heap_type =
-        D3D12_DESCRIPTOR_HEAP_TYPE_RTV;
-
-    for (size_t i = 0; i < sw_desc.BufferCount; ++i) {
+    const D3D12_DESCRIPTOR_HEAP_TYPE heap_type = D3D12_DESCRIPTOR_HEAP_TYPE_RTV;
+    for (size_t i = 0; i < NR_BUFFERS; ++i) {
+#ifndef WITHOUT_SWAP_CHAIN
         hr = out->schain->GetBuffer((uint32_t)i,
                                     IID_PPV_ARGS(&out->back_buff[i]));
         RCK(hr, "SwapChain::GetBuffer:%x");
+#endif
 
 #ifdef _DEBUG
         D3D12_RESOURCE_DESC desc = out->back_buff[i]->GetDesc();
@@ -973,12 +984,16 @@ setup_scissor(D3D12_RECT *sr, size_t width, size_t height)
 void
 render_core(render *render, uint32_t frame)
 {
+#ifdef WITHOUT_SWAP_CHAIN
+    uint32_t index = render->out.frame_index;
+#else
     HRESULT hr;
 
     ComPtr<IDXGISwapChain3> schain;
     hr = render->out.schain.As(&schain);
     RCK(hr, "ComPtr::AS:%x");
     uint32_t index = schain->GetCurrentBackBufferIndex();
+#endif
 
 #ifdef COPY_ON_RENDER_CORE
     upload_texture(render->dev.Get(), &render->cmd, &render->queue,
@@ -1062,6 +1077,9 @@ render_core(render *render, uint32_t frame)
     download_render_target(render->dev.Get(), &render->cmd, &render->queue,
                            render->out.readback[index].Get(),
                            render->out.back_buff[index].Get());
-
+#ifdef WITHOUT_SWAP_CHAIN
+    render->out.frame_index = (render->out.frame_index + 1) % NR_BUFFERS;
+#else
     render->out.schain->Present(1, 0);
+#endif
 }

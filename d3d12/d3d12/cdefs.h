@@ -17,4 +17,8 @@
 #define GiB(n) MiB((n) * 1024)
 #define TiB(n) GiB((n) * 1024)
 
+#define COPY_ON_RENDER_CORE
+#define WITH_VIRTUAL_ALLOC
+#define WITHOUT_SWAP_CHAIN
+
 #endif	/* !CDEFS_H */

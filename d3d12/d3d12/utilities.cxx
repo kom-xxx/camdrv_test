@@ -15,7 +15,7 @@ get_pixel_value(size_t x, size_t y, bool direction, uint32_t shift = 0)
     if (direction)
         if ((x >> shift) % 3 == 0)
             return 0xff0000ff;
-        else if ((x >> shift) %3 == 1)
+        else if ((x >> shift) % 3 == 1)
             return 0xff00ff00;
         else
             return 0xffff0000;
@@ -62,11 +62,7 @@ alloc_texture_image(size_t width, size_t height, bool direction)
             if (i < 2 || 253 <= i || j < 2 || 253 <= j)
                 mem[i * width + j] = 0xff000000;
             else
-#if 0
-                mem[i * width + j] = 0xffffffff;
-#else
                 mem[i * width + j] = get_pixel_value(j, i, direction);
-#endif
 
     return (void *)mem;
 }

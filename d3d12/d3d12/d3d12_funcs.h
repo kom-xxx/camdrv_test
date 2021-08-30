@@ -40,6 +40,8 @@ void create_texture_buffer(ID3D12Device *,
 void create_target_heap(ID3D12Device *, render_heap *, size_t);
 void create_target_buffer(ID3D12Device *, render_heap *, size_t, size_t,
 			  ID3D12Resource **);
+void acquire_target_buffers(ID3D12Device *, render_heap *, render_output *,
+                            size_t, size_t);
 void create_readback_heap(ID3D12Device *, render_heap *, size_t);
 void upload_texture(ID3D12Device *, render_command *, render_cmd_queue *,
                     ID3D12Resource *, ID3D12Resource *);
@@ -52,7 +54,7 @@ void acquire_download_buffers(ID3D12Device *, render_heap *, render_output *,
                               size_t);
 void create_vbv(ID3D12Device *, render_heap *, render_input *);
 void create_ibv(ID3D12Device *, render_heap *, render_input *);
-void create_rtv(ID3D12Device *, render_environment *, render_output *);
+void create_rtv(ID3D12Device *, render_output *);
 void create_srv(ID3D12Device *, render_texture *);
 void compile_hlsl(const wchar_t *, const char *, const char *, ID3DBlob **);
 void define_input_layout(render_pipeline *);

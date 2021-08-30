@@ -57,8 +57,11 @@ WinMain(HINSTANCE inst, HINSTANCE _, LPSTR cmd_line, int show_mode)
     create_device(&render.env, &render.dev);
 
     create_command_queue(render.dev.Get(), &render.queue);
+
+#ifndef WITHOUT_SWAP_CHAIN
     create_swap_chain(&render.env, &render.queue, WIN_WIDTH, WIN_HEIGHT,
                       &render.out.schain);
+#endif
 
     create_upload_heap(render.dev.Get(), &render.ul_heap, MiB(32));
     create_texture_heap(render.dev.Get(), &render.tex_heap, MiB(32));
@@ -77,9 +80,13 @@ WinMain(HINSTANCE inst, HINSTANCE _, LPSTR cmd_line, int show_mode)
                   WIN_WIDTH, WIN_HEIGHT);
     create_srv(render.dev.Get(), &render.tex);
 
+#ifdef WITHOUT_SWAP_CHAIN
+    acquire_target_buffers(render.dev.Get(), &render.tgt_heap, &render.out,
+                           WIN_WIDTH, WIN_HEIGHT);
+#endif
     acquire_download_buffers(render.dev.Get(), &render.dl_heap, &render.out,
                              WIN_WIDTH * WIN_HEIGHT * sizeof (uint32_t));
-    create_rtv(render.dev.Get(), &render.env, &render.out);
+    create_rtv(render.dev.Get(), &render.out);
 
     compile_hlsl(L"shaders.hlsl", "vs_main", "vs_5_0",
                  &render.pipe.vs_code);
