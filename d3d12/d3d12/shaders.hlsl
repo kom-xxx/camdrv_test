@@ -9,16 +9,19 @@ SamplerState smp:register(s0);
 vsout vs_main(float4 pos : POSITION, float2 uv : TEXCOORD)
 {
 	vsout output;
+
 	output.svpos = pos;
 	output.uv = uv;
+
 	return output;
 }
 
 float4 ps_main(vsout input) : SV_TARGET
 {
 #if 1
-    return float4(tex.Sample(smp, input.uv));
+    return float4(tex.Sample(smp,input.uv));
 #else
+    /** UV gradation **/
     return float4(input.uv, 1, 1);
 #endif
 }

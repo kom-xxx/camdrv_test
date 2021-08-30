@@ -1,3 +1,6 @@
+#include <sstream>
+#include <string>
+
 #include <stddef.h>
 #include <stdint.h>
 #include <string.h>
@@ -21,6 +24,9 @@ using namespace DirectX;
 #pragma comment(lib, "d3d12.lib")
 #pragma comment(lib, "dxgi.lib")
 #pragma comment(lib, "d3dcompiler.lib")
+
+#define COPY_ON_RENDER_CORE
+#define WITH_VIRTUAL_ALLOC
 
 #define PCI_VENDOR_NVIDIA 0x10de
 
@@ -121,8 +127,8 @@ transition_barrier(ID3D12Resource *res,
 
 void
 transition_barrier_state(D3D12_RESOURCE_BARRIER *barrier,
-			 D3D12_RESOURCE_STATES before,
-			 D3D12_RESOURCE_STATES after)
+                         D3D12_RESOURCE_STATES before,
+                         D3D12_RESOURCE_STATES after)
 {
     barrier->Transition.StateBefore = before;
     barrier->Transition.StateAfter = after;
@@ -184,20 +190,20 @@ create_fence(ID3D12Device *dev, render_cmd_queue *queue)
  ***/
 void
 create_swap_chain(render_environment *env, render_cmd_queue *queue,
-		  size_t width, size_t height, IDXGISwapChain1 **swap_chain)
+                  size_t width, size_t height, IDXGISwapChain1 **swap_chain)
 {
     HRESULT hr;
 
     DXGI_SWAP_CHAIN_DESC1 sc_desc = {
-        (uint32_t)width,	       /* width */
-        (uint32_t)height,	       /* height */
-        DXGI_FORMAT_R8G8B8A8_UNORM,    /* format */
-        false,			       /* streo */
-        {1, 0},			       /* sample desc */
-        DXGI_USAGE_BACK_BUFFER,	       /* buffer usage */
-        2,			       /* buffer count */
-        DXGI_SCALING_STRETCH,	       /* scaling */
-        DXGI_SWAP_EFFECT_FLIP_DISCARD, /* swap effect */
+        (uint32_t)width,                       /* width */
+        (uint32_t)height,                      /* height */
+        DXGI_FORMAT_R8G8B8A8_UNORM,            /* format */
+        false,                                 /* streo */
+        {1, 0},                                /* sample desc */
+        DXGI_USAGE_BACK_BUFFER,                /* buffer usage */
+        2,                                     /* buffer count */
+        DXGI_SCALING_STRETCH,                  /* scaling */
+        DXGI_SWAP_EFFECT_FLIP_DISCARD,         /* swap effect */
         DXGI_ALPHA_MODE_UNSPECIFIED,	       /* alpha mode */
         DXGI_SWAP_CHAIN_FLAG_ALLOW_MODE_SWITCH /* flags */
     };
@@ -223,7 +229,9 @@ create_command_list(ID3D12Device *dev, render_command *cmd,
     hr = dev->CreateCommandList(0, type, cmd->alloc.Get(), nullptr,
                                 IID_PPV_ARGS(&cmd->list));
     RCK(hr, "CreateCommandList:%x");
+#if 1
     cmd->list->Close();
+#endif
 }
 
 /***
@@ -235,15 +243,15 @@ create_upload_heap(ID3D12Device *dev, render_heap *heap, size_t size)
     HRESULT hr;
 
     D3D12_HEAP_DESC desc = {
-       size,
-        {		/* heap properties */
+        size,
+        {                       /* heap properties */
             D3D12_HEAP_TYPE_UPLOAD,
             D3D12_CPU_PAGE_PROPERTY_UNKNOWN,
             D3D12_MEMORY_POOL_UNKNOWN,
             0,
             0
         },
-        0,		/* alignment */
+        0,                      /* alignment */
         D3D12_HEAP_FLAG_ALLOW_ONLY_BUFFERS
     };
     hr = dev->CreateHeap(&desc, IID_PPV_ARGS(&heap->heap));
@@ -253,19 +261,19 @@ create_upload_heap(ID3D12Device *dev, render_heap *heap, size_t size)
 
 void
 create_upload_buffer(ID3D12Device *dev, render_heap *heap,
-		     size_t size, ID3D12Resource **res)
+                     size_t size, ID3D12Resource **res)
 {
     HRESULT hr;
 
     D3D12_RESOURCE_DESC desc = {
         D3D12_RESOURCE_DIMENSION_BUFFER,
-        0,		/* alignment */
-        size,		/* width */
-        1,		/* height */
-        1,		/* depth or array size */
-        1,		/* mip levels */
+        0,                      /* alignment */
+        size,                   /* width */
+        1,                      /* height */
+        1,                      /* depth or array size */
+        1,                      /* mip levels */
         DXGI_FORMAT_UNKNOWN,
-        {1, 0},		/* sample desc */
+        {1, 0},                 /* sample desc */
         D3D12_TEXTURE_LAYOUT_ROW_MAJOR,
         D3D12_RESOURCE_FLAG_NONE
     };
@@ -289,7 +297,40 @@ copy_to_upload_buffer(ID3D12Resource *dst, void *src, size_t size)
     hr = dst->Map(0, nullptr, &map);
     RCK(hr, "Map:%x");
     memcpy(map, src, size);
+    fprintf(stderr, "%s: dst:%p src:%p\n", __func__, map, src);
     dst->Unmap(0, nullptr);
+}
+
+void
+import_uploade_buffer(ID3D12Device *dev_, void *mem,
+                      size_t width, size_t height, ID3D12Resource **res)
+{
+    HRESULT hr;
+
+    ComPtr<ID3D12Device3> dev;
+    hr = dev_->QueryInterface(IID_PPV_ARGS(&dev));
+
+    ComPtr<ID3D12Heap> heap;
+    hr = dev->OpenExistingHeapFromAddress(mem, IID_PPV_ARGS(&heap));
+    RCK(hr, "OpenExistingHeapFromAddress:%x");
+
+    size_t size = width * height * sizeof (uint32_t);
+    D3D12_RESOURCE_DESC desc = {
+        D3D12_RESOURCE_DIMENSION_BUFFER,
+        0,                      /* alignment */
+        size,                   /* width */
+        1,                      /* height */
+        1,                      /* depth or array size */
+        1,                      /* mip levels */
+        DXGI_FORMAT_UNKNOWN,
+        {1, 0},                 /* sample desc */
+        D3D12_TEXTURE_LAYOUT_ROW_MAJOR,
+        D3D12_RESOURCE_FLAG_ALLOW_CROSS_ADAPTER
+    };
+    hr = dev->CreatePlacedResource(heap.Get(), 0, &desc,
+                                   D3D12_RESOURCE_STATE_GENERIC_READ,
+                                   nullptr, IID_PPV_ARGS(res));
+    RCK(hr, "CreatePlacedResource(existing_heap):%x");
 }
 
 /***
@@ -309,7 +350,7 @@ create_texture_heap(ID3D12Device *dev, render_heap *heap, size_t size)
             1,
             1
         },
-        KiB(64),		/* alignment */
+        KiB(64),                /* alignment */
         D3D12_HEAP_FLAG_ALLOW_ONLY_NON_RT_DS_TEXTURES
     };
     hr = dev->CreateHeap(&desc, IID_PPV_ARGS(&heap->heap));
@@ -332,12 +373,12 @@ create_texture_buffer(ID3D12Device *dev, render_heap *heap,
         0,
         DXGI_FORMAT_R8G8B8A8_UNORM,
         {1, 0},
-	D3D12_TEXTURE_LAYOUT_UNKNOWN,
+        D3D12_TEXTURE_LAYOUT_UNKNOWN,
         D3D12_RESOURCE_FLAG_NONE
     };
     hr = dev->CreatePlacedResource(heap->heap.Get(), heap->offset, &desc,
-                                   D3D12_RESOURCE_STATE_COPY_DEST, nullptr,
-                                   IID_PPV_ARGS(res));
+                                   D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE,
+                                   nullptr, IID_PPV_ARGS(res));
     RCK(hr, "CreatePlacedResource:%x");
 
     D3D12_RESOURCE_ALLOCATION_INFO
@@ -352,24 +393,26 @@ upload_texture(ID3D12Device *dev, render_command *cmd, render_cmd_queue *queue,
 {
     HRESULT hr;
 
+#if 0
     D3D12_RESOURCE_DESC ddesc = dst->GetDesc();
     D3D12_RESOURCE_DESC sdesc = src->GetDesc();
     D3D12_HEAP_PROPERTIES dprops, sprops;
     D3D12_HEAP_FLAGS dflags, sflags;
     hr = dst->GetHeapProperties(&dprops, &dflags);
     hr = src->GetHeapProperties(&sprops, &sflags);
-    
+#endif
+
     D3D12_TEXTURE_COPY_LOCATION dst_loc = {
         dst,                    /* resource */
         D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX,
         0
     };
 
-    D3D12_RESOURCE_DESC desc = dst->GetDesc();
-
     D3D12_PLACED_SUBRESOURCE_FOOTPRINT fp;
     uint32_t nr_line;
     uint64_t line_len, size;
+
+    D3D12_RESOURCE_DESC desc = dst->GetDesc();
     dev->GetCopyableFootprints(&desc, 0, 1, 0, &fp, &nr_line, &line_len, &size);
 
     D3D12_TEXTURE_COPY_LOCATION src_loc = {
@@ -381,12 +424,18 @@ upload_texture(ID3D12Device *dev, render_command *cmd, render_cmd_queue *queue,
     cmd->alloc->Reset();
     cmd->list->Reset(cmd->alloc.Get(), nullptr);
 
+    D3D12_RESOURCE_BARRIER barrier = 
+        transition_barrier(dst, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE,
+                           D3D12_RESOURCE_STATE_COPY_DEST);
+    cmd->list->ResourceBarrier(1, &barrier);
+
     cmd->list->CopyTextureRegion(&dst_loc, 0, 0, 0, &src_loc, nullptr);
 
-    D3D12_RESOURCE_BARRIER barrier = 
-        transition_barrier(dst, D3D12_RESOURCE_STATE_COPY_DEST,
-                           D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+    transition_barrier_state(&barrier, D3D12_RESOURCE_STATE_COPY_DEST,
+                             D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+
     cmd->list->ResourceBarrier(1, &barrier);
+
     cmd->list->Close();
 
     execute_command_list(queue, cmd);
@@ -397,16 +446,22 @@ setup_texture(ID3D12Device *dev, render_heap *upload, render_heap *texture,
               render_command *cmd, render_cmd_queue *queue,
               render_texture *tex, size_t width, size_t height)
 {
+    uint32_t *data[2];
     size_t size = width * height * sizeof (uint32_t);
     
     for (size_t i = 0; i < NR_TEXTURE; ++i) {
-        std::vector<uint32_t>
-            image = create_texture_image(width, height, i == 1);
-        tex->image.push_back(image);
+#ifdef WITH_VIRTUAL_ALLOC
+        tex->alloc_mem[i] = alloc_texture_image(width, height, i % 2);
+        import_uploade_buffer(dev, tex->alloc_mem[i], width, height,
+                              &tex->upload_buffer[i]);
+#else
         create_upload_buffer(dev, upload, size, &tex->upload_buffer[i]);
+        tex->image.push_back(create_texture_image(width, height, i == 1));
+        data[i] = tex->image[i].data();
+        fprintf(stderr, "%s: image%lld:%p\n", __func__, i, data[i]);
         copy_to_upload_buffer(tex->upload_buffer[i].Get(),
                               (void *)tex->image[i].data(), size);
-
+#endif
         create_texture_buffer(dev, texture, width, height,
                               &tex->texture_buffer[i]);
 #ifndef COPY_ON_RENDER_CORE
@@ -414,6 +469,60 @@ setup_texture(ID3D12Device *dev, render_heap *upload, render_heap *texture,
                        tex->upload_buffer[i].Get());
 #endif
     }
+}
+
+/***
+ *** RENDER TARGET BUFFER
+ ***/
+void
+create_target_heap(ID3D12Device *dev, render_heap *heap, size_t size)
+{
+    HRESULT hr;
+
+    D3D12_HEAP_DESC desc = {
+        size,
+        {
+            D3D12_HEAP_TYPE_DEFAULT,
+            D3D12_CPU_PAGE_PROPERTY_UNKNOWN,
+            D3D12_MEMORY_POOL_UNKNOWN,
+            1,
+            1
+        },
+        0,
+        D3D12_HEAP_FLAG_ALLOW_ONLY_RT_DS_TEXTURES | D3D12_HEAP_FLAG_SHARED
+    };
+    hr = dev->CreateHeap(&desc, IID_PPV_ARGS(&heap->heap));
+    RCK(hr, "CreateHeap(render_target):%x");
+    heap->offset = 0;
+}
+
+void
+create_target_buffer(ID3D12Device *dev, render_heap *heap,
+                     size_t width, size_t height, ID3D12Resource **res)
+{
+    HRESULT hr;
+
+    D3D12_RESOURCE_DESC desc = {
+        D3D12_RESOURCE_DIMENSION_TEXTURE2D,
+        0,      /* alignment */
+        width,
+        (uint32_t)height,
+        1,      /* depth or array size */
+        1,      /* mip levels */
+        DXGI_FORMAT_R8G8B8A8_UNORM,
+        {1, 0},     /* sample desc */
+        D3D12_TEXTURE_LAYOUT_UNKNOWN,
+        D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET
+    };
+    hr = dev->CreatePlacedResource(heap->heap.Get(), heap->offset, &desc,
+                                   D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE,
+                                   nullptr, IID_PPV_ARGS(res));
+    RCK(hr, "CreatePlacedResource:%x");
+
+    D3D12_RESOURCE_ALLOCATION_INFO
+        alloc_info = dev->GetResourceAllocationInfo(0, 1, &desc);
+    heap->offset += alloc_info.SizeInBytes;
+    heap->count += 1;
 }
 
 /***
@@ -469,6 +578,62 @@ create_readback_buffer(ID3D12Device *dev, render_heap *heap, size_t size,
     heap->count += 1;
 }
 
+void
+acquire_download_buffers(ID3D12Device *dev,
+                         render_heap *heap, render_output *out, size_t size)
+{
+    for (size_t i = 0; i < NR_BUFFERS; ++i)
+        create_readback_buffer(dev, heap, size, &out->readback[i]);
+}
+
+void
+download_render_target(ID3D12Device *dev, render_command *cmd,
+                       render_cmd_queue *queue,
+                       ID3D12Resource *dst, ID3D12Resource *src)
+{
+    D3D12_TEXTURE_COPY_LOCATION src_loc = {
+        src,                    /* resource */
+        D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX,
+        0
+    };
+
+    D3D12_PLACED_SUBRESOURCE_FOOTPRINT fp;
+    uint32_t nr_line;
+    uint64_t line_len, size;
+
+    D3D12_RESOURCE_DESC desc = src->GetDesc();
+    dev->GetCopyableFootprints(&desc, 0, 1, 0, &fp, &nr_line, &line_len, &size);
+
+    D3D12_TEXTURE_COPY_LOCATION dst_loc = {
+        dst,
+        D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT,
+        fp
+    };
+
+    cmd->alloc->Reset();
+    cmd->list->Reset(cmd->alloc.Get(), nullptr);
+
+    D3D12_RESOURCE_BARRIER barrier = 
+        transition_barrier(src, D3D12_RESOURCE_STATE_COMMON,
+                           D3D12_RESOURCE_STATE_COPY_SOURCE);
+    cmd->list->ResourceBarrier(1, &barrier);
+
+    cmd->list->CopyTextureRegion(&dst_loc, 0, 0, 0, &src_loc, nullptr);
+
+    transition_barrier_state(&barrier, D3D12_RESOURCE_STATE_COPY_SOURCE,
+                             D3D12_RESOURCE_STATE_COMMON);
+
+    cmd->list->ResourceBarrier(1, &barrier);
+
+    cmd->list->Close();
+
+    execute_command_list(queue, cmd);
+
+    void *mem;
+    dst->Map(0, nullptr, &mem);
+    dst->Unmap(0, nullptr);
+}
+
 /***
  *** CREATE VIEWS
  ***     view : share resource between CPU and GPU
@@ -480,12 +645,23 @@ create_vbv(ID3D12Device *dev, render_heap *heap, render_input *in)
         XMFLOAT3 pos;
         XMFLOAT2 uv;
     };
+#if 0
     vertex vertexes[] = {
-        {{-0.4f, -0.7f, 0.0f}, {0.0f, 1.0f}}, /* left, bottom */
-        {{-0.4f,  0.7f, 0.0f}, {0.0f, 0.0f}}, /* left, top */
-        {{ 0.4f, -0.7f, 0.0f}, {1.0f, 1.0f}}, /* right, bottom */
-        {{ 0.4f,  0.7f, 0.0f}, {1.0f, 0.0f}}  /* right, top */
+        {{-1.0f, -1.0f, 0.0f}, {0.0f, 1.0f}}, /* left, bottom */
+        {{-1.0f,  1.0f, 0.0f}, {0.0f, 0.0f}}, /* left, top */
+        {{ 1.0f, -1.0f, 0.0f}, {1.0f, 1.0f}}, /* right, bottom */
+        {{ 1.0f,  1.0f, 0.0f}, {1.0f, 0.0f}}  /* right, top */
     };
+#else
+    float xxxx = 2.0f / 256.0f * 255.0f - 1.0f;
+    float norm = 1.0f / 256.0f * 255.0f;
+    vertex vertexes[] = {
+        {{-1.0f, -1.0f, 0.0f}, {0.0f, norm}},
+        {{-1.0f,  xxxx, 0.0f}, {0.0f, 0.0f}}, /* left, top */
+        {{ xxxx, -1.0f, 0.0f}, {norm, norm}}, /* right, bottom */
+        {{ xxxx,  xxxx, 0.0f}, {norm, 0.0f}}  /* right, top */
+    };
+#endif
     create_upload_buffer(dev, heap, sizeof vertexes, &in->vertex);
 
     copy_to_upload_buffer(in->vertex.Get(), vertexes,  sizeof vertexes);
@@ -519,7 +695,7 @@ create_srv(ID3D12Device *dev, render_texture *tex)
 
     D3D12_DESCRIPTOR_HEAP_DESC heap_desc = {
         D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV,
-        NR_TEXTURE,             /* # of descriptor */
+        2,   /* # of descriptor */
         D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE,
         0                       /* node mask */
     };
@@ -531,6 +707,7 @@ create_srv(ID3D12Device *dev, render_texture *tex)
         D3D12_SRV_DIMENSION_TEXTURE2D,
         D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING
     };
+
     D3D12_TEX2D_SRV tex2d = {
         0,                      /* most detailed mip */
         1,                      /* mip level */
@@ -558,9 +735,9 @@ create_rtv(ID3D12Device *dev, render_environment *env, render_output *out)
 
     D3D12_DESCRIPTOR_HEAP_DESC rtv_heap_desc = {
         D3D12_DESCRIPTOR_HEAP_TYPE_RTV, /* type */
-        2,				/* # of descriptor */
+        2,    /* # of descriptor */
         D3D12_DESCRIPTOR_HEAP_FLAG_NONE,/* flags */
-        0				/* node mask */
+        0    /* node mask */
     };
     hr = dev->CreateDescriptorHeap(&rtv_heap_desc,
                                    IID_PPV_ARGS(&out->rtvheap));
@@ -580,6 +757,13 @@ create_rtv(ID3D12Device *dev, render_environment *env, render_output *out)
                                     IID_PPV_ARGS(&out->back_buff[i]));
         RCK(hr, "SwapChain::GetBuffer:%x");
 
+#ifdef _DEBUG
+        D3D12_RESOURCE_DESC desc = out->back_buff[i]->GetDesc();
+        D3D12_HEAP_PROPERTIES props;
+        D3D12_HEAP_FLAGS flags;
+        hr = out->back_buff[i]->GetHeapProperties(&props, &flags);
+#endif
+
         dev->CreateRenderTargetView(out->back_buff[i].Get(),
                                     nullptr, handle);
         handle.ptr += dev->GetDescriptorHandleIncrementSize(heap_type);
@@ -591,7 +775,7 @@ create_rtv(ID3D12Device *dev, render_environment *env, render_output *out)
  **/
 void
 compile_hlsl(const wchar_t *filename, const char *entry, const char *target,
-	     ID3DBlob **code)
+             ID3DBlob **code)
 {
     HRESULT hr;
     ComPtr<ID3DBlob> error;
@@ -642,8 +826,8 @@ set_sampler_desc(D3D12_STATIC_SAMPLER_DESC *sd)
     sd->AddressW = D3D12_TEXTURE_ADDRESS_MODE_WRAP;
     sd->BorderColor = D3D12_STATIC_BORDER_COLOR_TRANSPARENT_BLACK;
     sd->Filter = D3D12_FILTER_MIN_MAG_MIP_POINT;
-    sd->MaxLOD = D3D12_FLOAT32_MAX;		    // max MipMap
-    sd->MinLOD = 0.0f;			    // min MipMap
+    sd->MaxLOD = D3D12_FLOAT32_MAX;      // max MipMap
+    sd->MinLOD = 0.0f;       // min MipMap
     sd->ComparisonFunc = D3D12_COMPARISON_FUNC_NEVER;
     sd->ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
 }
@@ -715,7 +899,7 @@ create_pipeline(ID3D12Device *dev, render_pipeline *pipe)
     desc.VS.BytecodeLength = pipe->vs_code->GetBufferSize();
     desc.PS.pShaderBytecode = pipe->ps_code->GetBufferPointer();
     desc.PS.BytecodeLength = pipe->ps_code->GetBufferSize();
-	
+ 
     desc.SampleMask = D3D12_DEFAULT_SAMPLE_MASK;
 
     /** BLENDING **/
@@ -768,8 +952,8 @@ setup_viewport(D3D12_VIEWPORT *vp, uint32_t width, uint32_t height)
 {
     vp->Width = (float)width;
     vp->Height = (float)height;
-    vp->TopLeftX = 0;
-    vp->TopLeftY = 0;
+    vp->TopLeftX = 0.0f;
+    vp->TopLeftY = 0.0f;
     vp->MaxDepth = 1.0f;
     vp->MinDepth = 0.0f;
 }
@@ -796,6 +980,12 @@ render_core(render *render, uint32_t frame)
     RCK(hr, "ComPtr::AS:%x");
     uint32_t index = schain->GetCurrentBackBufferIndex();
 
+#ifdef COPY_ON_RENDER_CORE
+    upload_texture(render->dev.Get(), &render->cmd, &render->queue,
+                   render->tex.texture_buffer[index].Get(),
+                   render->tex.upload_buffer[index].Get());
+#endif
+
 #ifndef RESET_LAST
     render->cmd.alloc->Reset();
     render->cmd.list->Reset(render->cmd.alloc.Get(), nullptr);
@@ -805,10 +995,9 @@ render_core(render *render, uint32_t frame)
         transition_barrier(render->out.back_buff[index].Get(),
                            D3D12_RESOURCE_STATE_PRESENT,
                            D3D12_RESOURCE_STATE_RENDER_TARGET);
-
     render->cmd.list->ResourceBarrier(1, &barrier);
-    render->cmd.list->SetPipelineState(render->pipe.pipe.Get());
 
+    render->cmd.list->SetPipelineState(render->pipe.pipe.Get());
 
     D3D12_CPU_DESCRIPTOR_HANDLE handle =
         render->out.rtvheap->GetCPUDescriptorHandleForHeapStart();
@@ -825,20 +1014,40 @@ render_core(render *render, uint32_t frame)
     float color[] = {r, g, b, 1.0f}; /* R, G, B, A */
     render->cmd.list->ClearRenderTargetView(handle, color, 0, nullptr);
 
+    /**
+     ** root signature and view posts
+     **/
     render->cmd.list->RSSetViewports(1, &render->pipe.view);
     render->cmd.list->RSSetScissorRects(1, &render->pipe.scissor);
     render->cmd.list->SetGraphicsRootSignature(render->pipe.sig.Get());
 
+    /**
+     ** inputs
+     **/
     render->cmd.list->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
     render->cmd.list->IASetVertexBuffers(0, 1, &render->in.vbv);
     render->cmd.list->IASetIndexBuffer(&render->in.ibv);
 
+    /**
+     ** texture
+     **/
+    ID3D12DescriptorHeap *heaps[] = {render->tex.desc_heap.Get()};
+    render->cmd.list->SetDescriptorHeaps(1, heaps);
+    D3D12_GPU_DESCRIPTOR_HANDLE
+        srv_handle = render->tex.desc_heap->GetGPUDescriptorHandleForHeapStart();
+    incr = (render->dev->GetDescriptorHandleIncrementSize(
+                D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV));
+    srv_handle.ptr += index * incr;
+    render->cmd.list->SetGraphicsRootDescriptorTable(0, srv_handle);
+
+    /**
+     ** draw
+     **/
     render->cmd.list->DrawIndexedInstanced(6, 1, 0, 0, 0);
 
     transition_barrier_state(&barrier,
                              D3D12_RESOURCE_STATE_RENDER_TARGET,
                              D3D12_RESOURCE_STATE_PRESENT);
-
     render->cmd.list->ResourceBarrier(1, &barrier);
 
     render->cmd.list->Close();
@@ -849,6 +1058,10 @@ render_core(render *render, uint32_t frame)
     render->cmd.alloc->Reset();
     render->cmd.list->Reset(render->cmd.alloc.Get(), nullptr);
 #endif
+
+    download_render_target(render->dev.Get(), &render->cmd, &render->queue,
+                           render->out.readback[index].Get(),
+                           render->out.back_buff[index].Get());
 
     render->out.schain->Present(1, 0);
 }

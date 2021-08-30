@@ -27,6 +27,7 @@ struct render_input {
 struct render_texture {
     std::vector<std::vector<uint32_t>> image; /* VirtualAlloc()'ed mem or
                                                  texture image in vector */
+	void *alloc_mem[NR_TEXTURE];
     std::vector<ComPtr<ID3D12Resource>> upload_buffer{nullptr, nullptr};
     std::vector<ComPtr<ID3D12Resource>> texture_buffer{nullptr, nullptr};
     ComPtr<ID3D12DescriptorHeap> desc_heap;
@@ -48,7 +49,8 @@ struct render_output {
     ComPtr<IDXGISwapChain1> schain;
     ComPtr<ID3D12DescriptorHeap> rtvheap;
     std::vector<ComPtr<ID3D12Resource>> back_buff{nullptr, nullptr};
-    std::vector<ComPtr<ID3D12Resource>> readback_buffer{nullptr, nullptr};
+	std::vector<ComPtr<ID3D12Resource>> target{nullptr, nullptr};
+    std::vector<ComPtr<ID3D12Resource>> readback{nullptr, nullptr};
 };
 
 struct render_pipeline {
@@ -72,6 +74,7 @@ struct render {
     ComPtr<ID3D12Device> dev;
     render_heap ul_heap;
     render_heap tex_heap;
+	render_heap tgt_heap;
     render_heap dl_heap;
     render_environment env;
     render_input in;
